@@ -15,6 +15,7 @@ aws configure
 
 ### ⚠️ 注意点
 **ACM 証明書の変更**
+
 別の証明書を使用する場合は、ARN を設定してください。
 ```bash
 # ACM 証明書の ARN（外部入力用）
@@ -25,12 +26,14 @@ variable "acm_certificate_arn" {
 ```
 
 **ECS コンテナイメージの変更**
+
 自分の ECR リポジトリを使用する場合は、以下の箇所を変更してください。
 ```bash
 image = "YOUR_ECR_REPO_URL"
 ```
 
 **RDS のパスワード変更**
+
 RDS のパスワードは AWS Secrets Manager で管理されています。デフォルトでは `rds_password_v2` という名前のシークレットが作成されます。
 別の名前に変更する場合は、以下のように設定してください。
 ```bash
