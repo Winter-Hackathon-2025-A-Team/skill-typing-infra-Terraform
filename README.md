@@ -46,3 +46,35 @@ CloudFront（CDN）
 - S3 をオリジンとしたコンテンツ配信
 - **キャッシュポリシー** の設定
 - **カスタムドメイン**（オプション）
+
+### 必要なツール
+このコードを実行する前に、以下のツールをインストールしてください。
+
+- Terraform  
+- AWS CLI  
+
+### デプロイ手順
+**リポジトリのクローン**  
+```bash
+git clone https://github.com/your-repo-name.git
+cd your-repo-name
+```
+
+**Terraform の初期化**
+Terraform のプラグインをダウンロードし、初期化を行います。
+```bash
+terraform init
+```
+
+**リソースの適用**
+Terraform を適用し、インフラをデプロイします。
+```bash
+terraform apply
+```
+
+**リソースの削除**
+インフラを削除する場合は、以下のコマンドを実行します。
+```bash
+terraform destroy
+```
+
