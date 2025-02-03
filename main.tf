@@ -475,7 +475,8 @@ resource "aws_secretsmanager_secret_version" "rds_password_version" {
 
 # Secrets Manager から RDS のパスワードを取得
 data "aws_secretsmanager_secret_version" "rds_password" {
-  secret_id = aws_secretsmanager_secret.rds_password.id
+  secret_id = aws_secretsmanager_secret.rds_password.arn # ARN に変更
+  depends_on = [aws_secretsmanager_secret_version.rds_password_version]
 }
 
 # RDS インスタンスの定義（MySQL 8.0 を使用）
