@@ -1,5 +1,7 @@
 ## 【AWS インフラストラクチャ構築（Terraform）】
-このリポジトリでは、Terraform を使用して AWS 上にインフラを構築するためのコードを提供します。
+このリポジトリでは、Terraform を使用して AWS 上にインフラを構築（一部、手動）するためのコードを提供します。
+
+![Screenshot 2025-02-03 at 18.50.54.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/3662571/b5c205af-9d3e-ceca-3db5-5e3164e6b296.png)
 
 ### 🛠 必要なツール
 このコードを実行する前に、以下のツールをインストールしてください。
