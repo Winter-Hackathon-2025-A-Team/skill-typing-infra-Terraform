@@ -9,7 +9,7 @@ variable "acm_certificate_arn" {
   description = "ARN of the ACM Certificate"
 }
 
-# VPC の定義
+# VPC の作成（ネットワークの基本構成）
 resource "aws_vpc" "main" {
   cidr_block           = "10.0.0.0/16"
   enable_dns_support   = true
@@ -20,7 +20,7 @@ resource "aws_vpc" "main" {
   }
 }
 
-# パブリックサブネット（AZ: ap-northeast-1a）
+# パブリックサブネット1（ap-northeast-1a）
 resource "aws_subnet" "public1" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.0.0/20"
@@ -31,7 +31,7 @@ resource "aws_subnet" "public1" {
   }
 }
 
-# パブリックサブネット（AZ: ap-northeast-1c）
+# パブリックサブネット2（ap-northeast-1c）
 resource "aws_subnet" "public2" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.16.0/20"
@@ -42,7 +42,7 @@ resource "aws_subnet" "public2" {
   }
 }
 
-# プライベートサブネット（AZ: ap-northeast-1a）
+# プライベートサブネット1（ap-northeast-1a, アプリケーション用）
 resource "aws_subnet" "private1" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.128.0/20"
@@ -53,7 +53,7 @@ resource "aws_subnet" "private1" {
   }
 }
 
-# プライベートサブネット（AZ: ap-northeast-1c）
+# プライベートサブネット2（ap-northeast-1c, アプリケーション用）
 resource "aws_subnet" "private2" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.144.0/20"
@@ -64,7 +64,7 @@ resource "aws_subnet" "private2" {
   }
 }
 
-# プライベートサブネット（AZ: ap-northeast-1a, 別のCIDRブロック）
+# プライベートサブネット3（ap-northeast-1a, DB用）
 resource "aws_subnet" "private3" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.160.0/20"
@@ -75,7 +75,7 @@ resource "aws_subnet" "private3" {
   }
 }
 
-# プライベートサブネット（AZ: ap-northeast-1c, 別のCIDRブロック）
+# プライベートサブネット4（ap-northeast-1c, DB用）
 resource "aws_subnet" "private4" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.176.0/20"
