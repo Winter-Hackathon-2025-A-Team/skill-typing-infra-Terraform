@@ -28,7 +28,7 @@ aws configure
 ```bash
 # ACM 証明書の ARN（外部入力用）
 variable "acm_certificate_arn" {
-  default     = "arn:aws:acm:ap-northeast-1:881490128743:certificate/d4cd488c-2252-489a-8011-87239ddb1ac7"
+  default     = "arn:aws:acm:ap-northeast-1:xxx"
   description = "ARN of the ACM Certificate"
 }
 ```
