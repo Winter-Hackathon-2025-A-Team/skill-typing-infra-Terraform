@@ -53,8 +53,8 @@ resource "aws_secretsmanager_secret" "rds_password_custom" {
 ### 🚀 デプロイ手順
 **1. リポジトリのクローン**  
 ```bash
-git clone https://github.com/Winter-Hackathon-2025-A-Team/skill-typing-infra.git
-cd skill-typing-infra
+git clone https://github.com/Winter-Hackathon-2025-A-Team/skill-typing-infra-Terraform.git
+cd skill-typing-infra-Terraform
 ```
 
 **2. Terraform の初期化**
