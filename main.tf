@@ -5,11 +5,11 @@ provider "aws" {
 
 # ACM 証明書の ARN（外部入力用）
 variable "acm_certificate_arn" {
-  default     = "arn:aws:acm:ap-northeast-1:881490128743:certificate/d4cd488c-2252-489a-8011-87239ddb1ac7"
+  default     = "arn:aws:acm:xxx"
   description = "ARN of the ACM Certificate"
 }
 
-# VPC の作成（ネットワークの基本構成）
+# VPC の定義
 resource "aws_vpc" "main" {
   cidr_block           = "10.0.0.0/16"
   enable_dns_support   = true
@@ -20,7 +20,7 @@ resource "aws_vpc" "main" {
   }
 }
 
-# パブリックサブネット1（ap-northeast-1a）
+# パブリックサブネット（AZ: ap-northeast-1a）
 resource "aws_subnet" "public1" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.0.0/20"
@@ -31,7 +31,7 @@ resource "aws_subnet" "public1" {
   }
 }
 
-# パブリックサブネット2（ap-northeast-1c）
+# パブリックサブネット（AZ: ap-northeast-1c）
 resource "aws_subnet" "public2" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.16.0/20"
@@ -42,7 +42,7 @@ resource "aws_subnet" "public2" {
   }
 }
 
-# プライベートサブネット1（ap-northeast-1a, アプリケーション用）
+# プライベートサブネット（AZ: ap-northeast-1a）
 resource "aws_subnet" "private1" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.128.0/20"
@@ -53,7 +53,7 @@ resource "aws_subnet" "private1" {
   }
 }
 
-# プライベートサブネット2（ap-northeast-1c, アプリケーション用）
+# プライベートサブネット（AZ: ap-northeast-1c）
 resource "aws_subnet" "private2" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.144.0/20"
@@ -64,7 +64,7 @@ resource "aws_subnet" "private2" {
   }
 }
 
-# プライベートサブネット3（ap-northeast-1a, DB用）
+# プライベートサブネット（AZ: ap-northeast-1a, 別のCIDRブロック）
 resource "aws_subnet" "private3" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.160.0/20"
@@ -75,7 +75,7 @@ resource "aws_subnet" "private3" {
   }
 }
 
-# プライベートサブネット4（ap-northeast-1c, DB用）
+# プライベートサブネット（AZ: ap-northeast-1c, 別のCIDRブロック）
 resource "aws_subnet" "private4" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.176.0/20"
@@ -252,6 +252,12 @@ resource "aws_security_group" "ecs_sg" {
   }
 }
 
+# CloudWatch Logs グループの作成
+resource "aws_cloudwatch_log_group" "ecs_logs" {
+  name              = "/ecs/datadog"
+  retention_in_days = 7  # ログの保持期間（必要に応じて変更）
+}
+
 # ECS クラスターの定義（Fargate でアプリを実行）
 resource "aws_ecs_cluster" "main" {
   name = "my-ecs-cluster"
@@ -296,17 +302,152 @@ resource "aws_iam_role" "ecs_task_execution_role" {
 
 # ECS タスク定義（Fargate で動作するコンテナの定義）
 resource "aws_ecs_task_definition" "main" {
-  family                   = "my-app-task"
+  family                   = "Datadog"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   cpu                      = "256"
   memory                   = "512"
   execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
 
+  volume {
+    name = "cws-instrumentation-volume"
+  }
+
   container_definitions = jsonencode([
     {
-      name       = "my-app-repo"
-      image      = "881490128743.dkr.ecr.ap-northeast-1.amazonaws.com/my-app-repo"
+      name       = "cws-instrumentation-init"
+      image      = "datadog/cws-instrumentation:latest"
+      essential  = false
+      user       = "0"
+      command    = [
+        "/cws-instrumentation",
+        "setup",
+        "--cws-volume-mount",
+        "/cws-instrumentation-volume"
+      ]
+      mountPoints = [
+        {
+          sourceVolume  = "cws-instrumentation-volume"
+          containerPath = "/cws-instrumentation-volume"
+          readOnly      = false
+        }
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = "/ecs/datadog"
+          awslogs-region        = "ap-northeast-1"
+          awslogs-stream-prefix = "cws-instrumentation-init"
+        }
+      }
+    },
+    {
+      name      = "datadog-agent"
+      image     = "datadog/agent:latest"
+      essential = true
+      environment = [
+        {
+          name  = "DD_API_KEY"
+          value = "xxx"
+        },
+        {
+          name  = "DD_SITE"
+          value = "ap1.datadoghq.com"
+        },
+        {
+          name  = "ECS_FARGATE"
+          value = "true"
+        },
+        # メトリクス収集（CPU・メモリ）を有効化
+        {
+          name  = "DD_CONTAINER_METRICS_ENABLED"
+          value = "true"
+        },
+        # Process Monitoring を完全に無効化
+        {
+          name  = "DD_PROCESS_AGENT_ENABLED"
+          value = "false"
+        },
+        {
+          name  = "DD_PROCESS_CONFIG_ENABLED"
+          value = "false"
+        },
+        {
+          name  = "DD_ORCHESTRATOR_EXPLORER_ENABLED"
+          value = "false"
+        },
+        {
+          name  = "DD_SYSTEM_PROBE_ENABLED"
+          value = "false"
+        },
+        # APM, ログ, セキュリティ機能も無効化
+        {
+          name  = "DD_LOGS_ENABLED"
+          value = "false"
+        },
+        {
+          name  = "DD_APM_ENABLED"
+          value = "false"
+        },
+        {
+          name  = "DD_TRACE_ENABLED"
+          value = "false"
+        },
+        {
+          name  = "DD_SECURITY_AGENT_ENABLED"
+          value = "false"
+        },
+        {
+          name  = "DD_RUNTIME_SECURITY_CONFIG_ENABLED"
+          value = "false"
+        },
+        {
+          name  = "DD_RUNTIME_SECURITY_CONFIG_EBPFLESS_ENABLED"
+          value = "false"
+        }
+      ]
+      healthCheck = {
+        command     = ["CMD-SHELL", "/probe.sh"]
+        interval    = 30
+        timeout     = 5
+        retries     = 2
+        startPeriod = 60
+      }
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = "/ecs/datadog"
+          awslogs-region        = "ap-northeast-1"
+          awslogs-stream-prefix = "datadog-agent"
+        }
+      }
+    },
+    {
+      name  = "my-app-repo"
+      image = "xxx.dkr.ecr.ap-northeast-1.amazonaws.com/my-app-repo"
+      entryPoint = ["/usr/src/app/app"] # 実行ファイルの絶対パスを指定
+      mountPoints = [
+        {
+          sourceVolume  = "cws-instrumentation-volume"
+          containerPath = "/cws-instrumentation-volume"
+          readOnly      = true
+        }
+      ]
+      linuxParameters = {
+        capabilities = {
+          add = ["SYS_PTRACE"]
+        }
+      }
+      dependsOn = [
+        {
+          containerName = "datadog-agent"
+          condition     = "HEALTHY"
+        },
+        {
+          containerName = "cws-instrumentation-init"
+          condition     = "SUCCESS"
+        }
+      ]
       portMappings = [
         {
           containerPort = 1323
@@ -314,6 +455,14 @@ resource "aws_ecs_task_definition" "main" {
           protocol      = "tcp"
         }
       ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = "/ecs/datadog"
+          awslogs-region        = "ap-northeast-1"
+          awslogs-stream-prefix = "my-app-repo"
+        }
+      }
     }
   ])
 }
@@ -463,20 +612,20 @@ resource "aws_db_subnet_group" "rds_subnet_group" {
 }
 
 # Secrets Manager を使用して RDS のパスワードを管理
-resource "aws_secretsmanager_secret" "rds_password_v2" {
-  name = "rds_password_v2"
+resource "aws_secretsmanager_secret" "rds_password_v5" {
+  name = "rds_password_v5"
 }
 
 # Secrets Manager に保存する RDS のパスワード（初期設定）
-resource "aws_secretsmanager_secret_version" "rds_password_version_v2" {
-  secret_id     = aws_secretsmanager_secret.rds_password_v2.id
+resource "aws_secretsmanager_secret_version" "rds_password_version_v5" {
+  secret_id     = aws_secretsmanager_secret.rds_password_v5.id
   secret_string = jsonencode({ password = "mypassword123" })
 }
 
 # Secrets Manager から RDS のパスワードを取得
-data "aws_secretsmanager_secret_version" "rds_password_v2" {
-  secret_id  = aws_secretsmanager_secret.rds_password_v2.arn
-  depends_on = [aws_secretsmanager_secret_version.rds_password_version_v2]
+data "aws_secretsmanager_secret_version" "rds_password_v5" {
+  secret_id  = aws_secretsmanager_secret.rds_password_v5.arn
+  depends_on = [aws_secretsmanager_secret_version.rds_password_version_v5]
 }
 
 # RDS インスタンスの定義（MySQL 8.0 を使用）
@@ -487,7 +636,7 @@ resource "aws_db_instance" "rds_instance" {
   engine_version       = "8.0.39"
   instance_class       = "db.t4g.micro"
   username             = "admin"
-  password             = jsondecode(data.aws_secretsmanager_secret_version.rds_password_v2.secret_string)["password"]
+  password             = jsondecode(data.aws_secretsmanager_secret_version.rds_password_v5.secret_string)["password"]
 
   db_subnet_group_name    = aws_db_subnet_group.rds_subnet_group.name
   vpc_security_group_ids  = [aws_security_group.rds_sg.id]
