@@ -743,3 +743,134 @@ resource "aws_db_instance" "rds_instance" {
   # 削除時の最終スナップショット作成をスキップ
   skip_final_snapshot = true
 }
+
+# S3 バケットの定義（CloudFront 経由でアクセスするためのバケット）
+resource "aws_s3_bucket" "my_bucket" {
+  bucket = "my-cloudfront-bucket-tokyo"
+  acl    = "private" # バケットは非公開に設定（CloudFront からのアクセスのみ許可）
+
+  tags = {
+    Name        = "MyS3Bucket"
+    Environment = "Production"
+  }
+}
+
+# S3 バケットのウェブホスティング設定（index.html と error.html を指定）
+resource "aws_s3_bucket_website_configuration" "my_bucket_website" {
+  bucket = aws_s3_bucket.my_bucket.id
+
+  index_document {
+    suffix = "index.html"
+  }
+
+  error_document {
+    key = "error.html"
+  }
+}
+
+# CloudFront 用オリジンアクセスアイデンティティ（OAI）の定義（S3 へのセキュアなアクセスを許可）
+resource "aws_cloudfront_origin_access_identity" "my_oai" {
+  comment = "OAI for S3 bucket"
+}
+
+# S3 バケットポリシーの設定（CloudFront OAI のみ S3 へのアクセスを許可）
+resource "aws_s3_bucket_policy" "my_bucket_policy" {
+  bucket = aws_s3_bucket.my_bucket.id
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect    = "Allow",
+        Principal = {
+          AWS = aws_cloudfront_origin_access_identity.my_oai.iam_arn
+        },
+        Action   = "s3:GetObject",
+        Resource = "${aws_s3_bucket.my_bucket.arn}/*"
+      }
+    ]
+  })
+}
+
+# 簡易的な HTML ファイル（index.html）の作成
+resource "local_file" "index_html" {
+  content  = "<html><body><h1>React in S3</h1></body></html>"
+  filename = "index.html"
+}
+
+# index.html を S3 バケットにアップロード
+resource "aws_s3_object" "index_file" {
+  bucket       = aws_s3_bucket.my_bucket.id
+  key          = "index.html"
+  source       = local_file.index_html.filename
+  content_type = "text/html"
+  acl          = "private" # オブジェクトは非公開（CloudFront 経由でのみアクセス可能）
+}
+
+# CloudFront ディストリビューションの定義（S3 バケットをオリジンとする）
+resource "aws_cloudfront_distribution" "my_distribution" {
+  origin {
+    domain_name = aws_s3_bucket.my_bucket.bucket_regional_domain_name
+    origin_id   = "S3-my-cloudfront-bucket"
+    origin_path = "/client"  # 🔹 ここを追加
+
+    s3_origin_config {
+      origin_access_identity = aws_cloudfront_origin_access_identity.my_oai.cloudfront_access_identity_path
+    }
+  }
+
+  enabled             = true
+  is_ipv6_enabled     = true
+  comment             = "CloudFront Distribution for S3 bucket in Tokyo region"
+  default_root_object = "index.html"
+
+  default_cache_behavior {
+    allowed_methods  = ["GET", "HEAD"]
+    cached_methods   = ["GET", "HEAD"]
+    target_origin_id = "S3-my-cloudfront-bucket"
+
+    forwarded_values {
+      query_string = false
+
+      cookies {
+        forward = "none"
+      }
+    }
+
+    viewer_protocol_policy = "redirect-to-https"
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  price_class = "PriceClass_100"
+
+  viewer_certificate {
+    acm_certificate_arn      = "arn:aws:acm:us-east-1:xxx"
+    ssl_support_method       = "sni-only"
+    minimum_protocol_version = "TLSv1.2_2021"
+  }
+
+  aliases = ["honda333.blog"]
+
+  tags = {
+    Name        = "MyCloudFrontDistribution"
+    Environment = "Production"
+  }
+}
+
+# Route 53 に CloudFront へのエイリアスレコードを追加
+resource "aws_route53_record" "cloudfront" {
+  zone_id = "xxx"
+  name    = "xxx.blog"
+  type    = "A"
+
+  alias {
+    name                   = aws_cloudfront_distribution.my_distribution.domain_name
+    zone_id                = aws_cloudfront_distribution.my_distribution.hosted_zone_id
+    evaluate_target_health = false
+  }
+}
