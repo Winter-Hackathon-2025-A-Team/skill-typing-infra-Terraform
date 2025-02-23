@@ -300,6 +300,18 @@ resource "aws_iam_role" "ecs_task_execution_role" {
   }
 }
 
+# ECS Exec に必要な SSM 権限を付与
+resource "aws_iam_role_policy_attachment" "ecs_ssm_policy" {
+  role       = aws_iam_role.ecs_task_execution_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+# ECS タスク実行ロールの基本ポリシー
+resource "aws_iam_role_policy_attachment" "ecs_task_execution_policy" {
+  role       = aws_iam_role.ecs_task_execution_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
 # ECS タスク定義（Fargate で動作するコンテナの定義）
 resource "aws_ecs_task_definition" "main" {
   family                   = "Datadog"
@@ -308,6 +320,7 @@ resource "aws_ecs_task_definition" "main" {
   cpu                      = "256"
   memory                   = "512"
   execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
+  task_role_arn            = aws_iam_role.ecs_task_execution_role.arn  # <-- 追加
 
   volume {
     name = "cws-instrumentation-volume"
@@ -424,8 +437,83 @@ resource "aws_ecs_task_definition" "main" {
     },
     {
       name  = "my-app-repo"
-      image = "xxx.dkr.ecr.ap-northeast-1.amazonaws.com/my-app-repo"
-      entryPoint = ["/usr/src/app/app"] # 実行ファイルの絶対パスを指定
+      image = "xxx"
+      entryPoint = ["/bin/sh", "-c", "/app/migrate_app && /app/server"]
+
+      environment = [
+        # MySQL 環境変数
+        {
+          "name": "GO_ENV",
+          "value": "prod"
+        },
+        {
+          "name": "MYSQL_ROOT_PASSWORD",
+          "value": "root"
+        },        
+        {
+          "name": "MYSQL_USER",
+          "value": "myuser"
+        },
+        {
+          "name": "MYSQL_PW",
+          "value": "${jsondecode(data.aws_secretsmanager_secret_version.rds_password_v5.secret_string)["password"]}"
+        },
+        {
+          "name": "MYSQL_HOST",
+          "value": "${aws_db_instance.rds_instance.address}"
+        },
+        {
+          "name": "MYSQL_PORT",
+          "value": "3306"
+        },
+        {
+          "name": "MYSQL_DB",
+          "value": "mydatabase"
+        },
+
+        # phpMyAdmin 環境変数
+        {
+          "name": "PMA_ARBITRARY",
+          "value": "1"
+        },
+        {
+          "name": "PMA_USER",
+          "value": "myuser"
+        },
+        {
+          "name": "PMA_PASSWORD",
+          "value": "root"
+        },
+        {
+          "name": "PMA_HOST",
+          "value": "dev-mysql"
+        },
+        {
+          "name": "PMA_PORT",
+          "value": "3306"
+        },
+
+        # Cognito 環境変数
+        {
+          "name": "COGNITO_USER_POOL_ID",
+          "value": "xxx"
+        },
+        {
+          "name": "COGNITO_CLIENT_ID",
+          "value": "xxx"
+        },
+        {
+          "name": "AWS_REGION",
+          "value": "ap-northeast-1"
+        },
+
+        # OpenAI APIキー
+        {
+          "name": "OPENAI_API_KEY",
+          "value": "xxx"
+        }
+      ]
+
       mountPoints = [
         {
           sourceVolume  = "cws-instrumentation-volume"
@@ -474,6 +562,7 @@ resource "aws_ecs_service" "main" {
   task_definition = aws_ecs_task_definition.main.arn
   desired_count   = 1
   launch_type     = "FARGATE"
+  enable_execute_command = true  # <-- 追加
 
   # ネットワーク設定（プライベートサブネットで実行し、パブリック IP を付与しない）
   network_configuration {
@@ -580,14 +669,6 @@ resource "aws_lb_listener" "http_listener" {
 resource "aws_security_group" "rds_sg" {
   vpc_id = aws_vpc.main.id
 
-  # インバウンドルール: MySQL (3306) の接続を VPC 内のリソースから許可
-  ingress {
-    from_port   = 3306
-    to_port     = 3306
-    protocol    = "tcp"
-    cidr_blocks = ["10.0.0.0/16"]
-  }
-
   # アウトバウンドルール: すべての通信を許可
   egress {
     from_port   = 0
@@ -599,6 +680,17 @@ resource "aws_security_group" "rds_sg" {
   tags = {
     Name = "Terraform-rds-sg"
   }
+}
+
+# RDS のインバウンドルールを ECS のセキュリティグループ（ecs_sg）のみに制限
+resource "aws_security_group_rule" "rds_allow_ecs" {
+  type                     = "ingress"
+  from_port                = 3306
+  to_port                  = 3306
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.rds_sg.id
+  source_security_group_id = aws_security_group.ecs_sg.id  # ← ECSのセキュリティグループのみ許可
+  description              = "Allow ECS to access RDS"
 }
 
 # RDS 用サブネットグループの定義（RDS を配置するサブネットを指定）
@@ -635,9 +727,9 @@ resource "aws_db_instance" "rds_instance" {
   engine               = "mysql"
   engine_version       = "8.0.39"
   instance_class       = "db.t4g.micro"
-  username             = "admin"
+  username             = "myuser"  # 変更
   password             = jsondecode(data.aws_secretsmanager_secret_version.rds_password_v5.secret_string)["password"]
-
+  db_name              = "mydatabase"  # ← ここを追加
   db_subnet_group_name    = aws_db_subnet_group.rds_subnet_group.name
   vpc_security_group_ids  = [aws_security_group.rds_sg.id]
 
@@ -650,122 +742,4 @@ resource "aws_db_instance" "rds_instance" {
 
   # 削除時の最終スナップショット作成をスキップ
   skip_final_snapshot = true
-}
-
-# S3 バケットの定義（CloudFront 経由でアクセスするためのバケット）
-resource "aws_s3_bucket" "my_bucket" {
-  bucket = "my-cloudfront-bucket-tokyo"
-  acl    = "private" # バケットは非公開に設定（CloudFront からのアクセスのみ許可）
-
-  tags = {
-    Name        = "MyS3Bucket"
-    Environment = "Production"
-  }
-}
-
-# S3 バケットのウェブホスティング設定（index.html と error.html を指定）
-resource "aws_s3_bucket_website_configuration" "my_bucket_website" {
-  bucket = aws_s3_bucket.my_bucket.id
-
-  index_document {
-    suffix = "index.html"
-  }
-
-  error_document {
-    key = "error.html"
-  }
-}
-
-# CloudFront 用オリジンアクセスアイデンティティ（OAI）の定義（S3 へのセキュアなアクセスを許可）
-resource "aws_cloudfront_origin_access_identity" "my_oai" {
-  comment = "OAI for S3 bucket"
-}
-
-# S3 バケットポリシーの設定（CloudFront OAI のみ S3 へのアクセスを許可）
-resource "aws_s3_bucket_policy" "my_bucket_policy" {
-  bucket = aws_s3_bucket.my_bucket.id
-
-  policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [
-      {
-        Effect    = "Allow",
-        Principal = {
-          AWS = aws_cloudfront_origin_access_identity.my_oai.iam_arn
-        },
-        Action   = "s3:GetObject",
-        Resource = "${aws_s3_bucket.my_bucket.arn}/*"
-      }
-    ]
-  })
-}
-
-# 簡易的な HTML ファイル（index.html）の作成
-resource "local_file" "index_html" {
-  content  = "<html><body><h1>React in S3</h1></body></html>"
-  filename = "index.html"
-}
-
-# index.html を S3 バケットにアップロード
-resource "aws_s3_object" "index_file" {
-  bucket       = aws_s3_bucket.my_bucket.id
-  key          = "index.html"
-  source       = local_file.index_html.filename
-  content_type = "text/html"
-  acl          = "private" # オブジェクトは非公開（CloudFront 経由でのみアクセス可能）
-}
-
-# CloudFront ディストリビューションの定義（S3 バケットをオリジンとする）
-resource "aws_cloudfront_distribution" "my_distribution" {
-  origin {
-    domain_name = aws_s3_bucket.my_bucket.bucket_regional_domain_name
-    origin_id   = "S3-my-cloudfront-bucket"
-
-    # CloudFront が S3 にアクセスするための OAI を設定
-    s3_origin_config {
-      origin_access_identity = aws_cloudfront_origin_access_identity.my_oai.cloudfront_access_identity_path
-    }
-  }
-
-  enabled             = true  # ディストリビューションを有効化
-  is_ipv6_enabled     = true  # IPv6 を有効化
-  comment             = "CloudFront Distribution for S3 bucket in Tokyo region"
-  default_root_object = "index.html" # ルートにアクセスした際のデフォルトファイル
-
-  # デフォルトのキャッシュ動作設定（GET/HEAD のみ許可し、HTTPS にリダイレクト）
-  default_cache_behavior {
-    allowed_methods  = ["GET", "HEAD"]
-    cached_methods   = ["GET", "HEAD"]
-    target_origin_id = "S3-my-cloudfront-bucket"
-
-    forwarded_values {
-      query_string = false # クエリパラメータをキャッシュのキーに含めない
-
-      cookies {
-        forward = "none" # クッキーを転送しない
-      }
-    }
-
-    viewer_protocol_policy = "redirect-to-https" # HTTP を HTTPS にリダイレクト
-  }
-
-  # 地理的制限の設定（制限なし）
-  restrictions {
-    geo_restriction {
-      restriction_type = "none"
-    }
-  }
-
-  # 料金クラスの設定（安価なリージョンのみ使用）
-  price_class = "PriceClass_100"
-
-  # CloudFront の SSL 証明書設定（デフォルトの CloudFront 証明書を使用）
-  viewer_certificate {
-    cloudfront_default_certificate = true
-  }
-
-  tags = {
-    Name        = "MyCloudFrontDistribution"
-    Environment = "Production"
-  }
 }
