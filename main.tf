@@ -470,7 +470,11 @@ resource "aws_ecs_task_definition" "main" {
           "name": "MYSQL_DB",
           "value": "mydatabase"
         },
-
+        # CORS 設定
+        {
+          "name": "CORS_ALLOWED_ORIGIN",
+          "value": "https://honda333.blog"
+        },
         # phpMyAdmin 環境変数
         {
           "name": "PMA_ARBITRARY",
