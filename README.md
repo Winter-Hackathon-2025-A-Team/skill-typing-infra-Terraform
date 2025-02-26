@@ -80,7 +80,7 @@ terraform destroy
 
 ### 📌 構築するインフラ構成図
 
-![Screenshot 2025-02-03 at 18.50.54.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/3662571/b5c205af-9d3e-ceca-3db5-5e3164e6b296.png)
+![Screenshot 2025-02-21 at 7.29.34.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/3662571/14c68cef-7863-4742-97de-dc012a8dfd49.png)
 
 VPC（Virtual Private Cloud）
 - AWS 上で独立したネットワーク環境を構築
