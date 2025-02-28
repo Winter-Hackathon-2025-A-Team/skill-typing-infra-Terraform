@@ -42,7 +42,7 @@ image = "YOUR_ECR_REPO_URL"
 
 - **RDS のパスワード変更**
 
-RDS のパスワードは AWS Secrets Manager で管理されています。デフォルトでは `rds_password_v2` という名前のシークレットが作成されます。
+RDS のパスワードは AWS Secrets Manager で管理されています。デフォルトでは `rds_password_v5` という名前のシークレットが作成されます。
 別の名前に変更する場合は、以下のように設定してください。
 ```bash
 resource "aws_secretsmanager_secret" "rds_password_custom" {
