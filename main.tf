@@ -360,7 +360,7 @@ resource "aws_ecs_task_definition" "main" {
       environment = [
         {
           name  = "DD_API_KEY"
-          value = "xxx"
+          value = jsondecode(data.aws_secretsmanager_secret_version.datadog_api_key.secret_string)["api_key"]
         },
         {
           name  = "DD_SITE"
@@ -436,7 +436,7 @@ resource "aws_ecs_task_definition" "main" {
     },
     {
       name  = "my-app-repo"
-      image = "xxx"
+      image = jsondecode(data.aws_secretsmanager_secret_version.my_app_image.secret_string)["image"]
       entryPoint = ["/bin/sh", "-c", "/app/migrate_app && /app/server"]
 
       environment = [
@@ -447,11 +447,11 @@ resource "aws_ecs_task_definition" "main" {
         },
         {
           "name": "MYSQL_ROOT_PASSWORD",
-          "value": "root"
+          "value": jsondecode(data.aws_secretsmanager_secret_version.mysql_password.secret_string)["root_password"]
         },        
         {
           "name": "MYSQL_USER",
-          "value": "myuser"
+          "value": jsondecode(data.aws_secretsmanager_secret_version.mysql_password.secret_string)["user"]
         },
         {
           "name": "MYSQL_PW",
@@ -472,7 +472,7 @@ resource "aws_ecs_task_definition" "main" {
         # CORS 設定
         {
           "name": "CORS_ALLOWED_ORIGIN",
-          "value": "https://honda333.blog"
+          "value": jsondecode(data.aws_secretsmanager_secret_version.cors_settings.secret_string)["allowed_origin"]
         },
         # phpMyAdmin 環境変数
         {
@@ -481,15 +481,15 @@ resource "aws_ecs_task_definition" "main" {
         },
         {
           "name": "PMA_USER",
-          "value": "myuser"
+          "value": jsondecode(data.aws_secretsmanager_secret_version.phpmyadmin_settings.secret_string)["user"]
         },
         {
           "name": "PMA_PASSWORD",
-          "value": "root"
+          "value": jsondecode(data.aws_secretsmanager_secret_version.phpmyadmin_settings.secret_string)["password"]
         },
         {
           "name": "PMA_HOST",
-          "value": "dev-mysql"
+          "value": jsondecode(data.aws_secretsmanager_secret_version.phpmyadmin_settings.secret_string)["host"]
         },
         {
           "name": "PMA_PORT",
@@ -499,11 +499,11 @@ resource "aws_ecs_task_definition" "main" {
         # Cognito 環境変数
         {
           "name": "COGNITO_USER_POOL_ID",
-          "value": "xxx"
+          "value": jsondecode(data.aws_secretsmanager_secret_version.cognito_settings.secret_string)["user_pool_id"]
         },
         {
           "name": "COGNITO_CLIENT_ID",
-          "value": "xxx"
+          "value": jsondecode(data.aws_secretsmanager_secret_version.cognito_settings.secret_string)["client_id"]
         },
         {
           "name": "AWS_REGION",
@@ -513,7 +513,7 @@ resource "aws_ecs_task_definition" "main" {
         # OpenAI APIキー
         {
           "name": "OPENAI_API_KEY",
-          "value": "xxx"
+          "value": jsondecode(data.aws_secretsmanager_secret_version.openai_api_key.secret_string)["api_key"]
         }
       ]
 
@@ -877,4 +877,45 @@ resource "aws_route53_record" "cloudfront" {
     zone_id                = aws_cloudfront_distribution.my_distribution.hosted_zone_id
     evaluate_target_health = false
   }
+}
+
+# Secrets Manager からすべてのシークレットを取得
+# ACM 証明書の ARN
+data "aws_secretsmanager_secret_version" "acm_certificate_arn" {
+  secret_id = "acm_certificate_arn"
+}
+
+# Datadog APIキー
+data "aws_secretsmanager_secret_version" "datadog_api_key" {
+  secret_id = "datadog_api_key"
+}
+
+# MySQL の認証情報
+data "aws_secretsmanager_secret_version" "mysql_password" {
+  secret_id = "mysql_password"
+}
+
+# OpenAI APIキー
+data "aws_secretsmanager_secret_version" "openai_api_key" {
+  secret_id = "openai_api_key"
+}
+
+# ECS のコンテナイメージ情報
+data "aws_secretsmanager_secret_version" "my_app_image" {
+  secret_id = "my_app_image"
+}
+
+# CORS 設定
+data "aws_secretsmanager_secret_version" "cors_settings" {
+  secret_id = "cors_settings"
+}
+
+# phpMyAdmin 設定
+data "aws_secretsmanager_secret_version" "phpmyadmin_settings" {
+  secret_id = "phpmyadmin_settings"
+}
+
+# Cognito 設定
+data "aws_secretsmanager_secret_version" "cognito_settings" {
+  secret_id = "cognito_settings"
 }
