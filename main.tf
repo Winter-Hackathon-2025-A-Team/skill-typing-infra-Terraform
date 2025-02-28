@@ -3,10 +3,9 @@ provider "aws" {
   region = "ap-northeast-1"
 }
 
-# ACM 証明書の ARN（外部入力用）
-variable "acm_certificate_arn" {
-  default     = "arn:aws:acm:xxx"
-  description = "ARN of the ACM Certificate"
+# ACM 証明書の ARN を Secrets Manager から取得
+data "aws_secretsmanager_secret_version" "acm_certificate_arn" {
+  secret_id = "acm_certificate_arn"
 }
 
 # VPC の定義
@@ -660,7 +659,8 @@ resource "aws_lb_listener" "http_listener" {
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-2016-08"
   
-  certificate_arn = var.acm_certificate_arn # SSL 証明書の ARN を指定
+  # Secrets Manager から取得
+  certificate_arn = jsondecode(data.aws_secretsmanager_secret_version.acm_certificate_arn.secret_string)["arn"]
 
   # ターゲットグループへのリクエスト転送設定
   default_action {
