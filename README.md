@@ -82,48 +82,68 @@ terraform destroy
 
 ![Screenshot 2025-02-21 at 7.29.34.png](https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/3662571/14c68cef-7863-4742-97de-dc012a8dfd49.png)
 
-VPC（Virtual Private Cloud）
-- AWS 上で独立したネットワーク環境を構築
-- CIDR ブロックの指定
-- サブネットの分割（パブリック / プライベート）
+- **AWS プロバイダーの設定**  
+  - AWS の東京リージョン (**ap-northeast-1**) でインフラを構築するよう設定。  
 
-サブネット
-- **パブリックサブネット**：インターネットへのアクセスが可能
-- **プライベートサブネット**：インターネットからの直接アクセスを制限
+- **Secrets Manager から ACM 証明書の ARN を取得**  
+  - SSL 証明書の **ARN を Secrets Manager から取得** し、HTTPS 通信に利用。  
 
-インターネットゲートウェイ / NAT ゲートウェイ
-- **インターネットゲートウェイ（IGW）**：パブリックサブネットからの外部通信を許可
-- **NAT ゲートウェイ**：プライベートサブネットからの外部通信を許可
+- **ネットワークの構築**  
+  - **VPC（仮想ネットワーク）**  
+    - 10.0.0.0/16 の範囲で VPC を作成し、DNS を有効化。  
+  - **パブリックサブネット**  
+    - インターネットに直接接続可能なサブネット。  
+    - **ap-northeast-1a** と **ap-northeast-1c** の 2 つの AZ に配置。  
+  - **プライベートサブネット**  
+    - インターネットに直接接続できないサブネット（NAT 経由で通信）。  
+    - **ap-northeast-1a** と **ap-northeast-1c** に、それぞれ 2 つずつ作成。  
+  - **インターネットゲートウェイ (IGW)**  
+    - VPC をインターネットに接続させるためのゲートウェイ。  
+  - **ルートテーブル**  
+    - **パブリックサブネット** は IGW を使ってインターネットに接続。  
+    - **プライベートサブネット** は NAT ゲートウェイ経由でインターネットに接続。  
+  - **NAT ゲートウェイ**  
+    - **プライベートサブネットの EC2 インスタンスや ECS タスク** が外部と通信できるようにする。  
 
-ECS（Elastic Container Service）
-- AWS Fargate によるコンテナ管理
-- タスク定義（Task Definition）の作成
-- サービスのデプロイ（ECS Service）
-- ALB（Application Load Balancer）との統合
+- **ECS クラスターの作成**  
+  - AWS のコンテナオーケストレーションサービス **ECS (Fargate)** を使用。  
+  - **ECS クラスター (`my-ecs-cluster`) を作成**。  
+  - ECS タスクが AWS サービスにアクセスするための **IAM ロール (`ecs-task-execution-role`) を作成**。  
 
-ALB（Application Load Balancer）
-- ECS サービスのロードバランシング
-- **ターゲットグループ** の設定
-- **リスナー** の設定（HTTP / HTTPS）
-- **ヘルスチェック** の構成
+- **ECS タスクの定義**  
+  - **ECS タスク (Datadog) を定義し、Fargate で動作するよう設定。**  
+  - 3 つのコンテナを実行：  
+    - **Datadog エージェント**  
+    - **CWS（Cloud Workload Security）**  
+    - **アプリケーションコンテナ (`my-app-repo`)**  
+  - タスクには以下の環境変数を設定：  
+    - **MySQL の接続情報**  
+    - **Cognito（認証情報）**  
+    - **Datadog API キー**  
+    - **OpenAI API キー** など。  
 
-RDS（Relational Database Service）
-- MySQL 8.0 のデータベースを作成
-- **パラメータグループ** の設定
-- **セキュリティグループ** によるアクセス制御
-- **Secrets Manager** によるパスワード管理
+- **ECS サービスの設定**  
+  - **ECS Fargate タスクをプライベートサブネットで実行**。  
+  - **ロードバランサー (ALB) と接続** して外部からアクセス可能に。  
 
-CloudFront & S3
+- **ALB（アプリケーションロードバランサー）の設定**  
+  - **HTTPS 通信を許可するパブリック ALB を作成**。  
+  - **443 番ポート (HTTPS) を開放**。  
+  - **ターゲットグループを作成し、ECS のコンテナを登録**。  
+  - **ヘルスチェックを設定し、正常なターゲットのみトラフィックを送信**。  
 
-S3（Simple Storage Service）
-- React アプリのホスティング
-- **バケットポリシー** の設定
-- **OAI（Origin Access Identity）** によるアクセス制御
+- **RDS（MySQL データベース）の設定**  
+  - **プライベートサブネットに配置し、外部から直接アクセス不可**。  
+  - **IAM Secrets Manager でパスワード管理**。  
+  - **ECS タスクのセキュリティグループだけがアクセス可能**。  
 
-CloudFront（CDN）
-- S3 をオリジンとしたコンテンツ配信
-- **キャッシュポリシー** の設定
-- **カスタムドメイン**（オプション）
+- **CloudFront + S3 の設定**  
+  - **S3 バケット (`my-cloudfront-bucket-tokyo`) を作成し、React アプリをホスティング**。  
+  - **CloudFront (CDN) を設定し、S3 の静的コンテンツを配信**。  
+  - **CloudFront OAI (オリジンアクセスアイデンティティ) を使い、S3 への直接アクセスを禁止**。  
+
+- **Route 53（DNS）の設定**  
+  - **Route 53 で CloudFront のエイリアスレコードを設定** し、**独自ドメイン (`honda333.blog`) でアクセス可能** に。  
 
 ### 💬 問い合わせ
 質問や問題がある場合は、GitHub の Issues または Pull Request でお問い合わせください。
